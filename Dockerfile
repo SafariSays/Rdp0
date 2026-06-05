@@ -1,18 +1,56 @@
-FROM --platform=linux/amd64 ubuntu:26.04
+FROM kalilinux/kali-rolling:latest
 
+# Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
-# ... the rest of the Dockerfile remains the same
-RUN apt update -y && apt install --no-install-recommends -y xfce4 xfce4-goodies tigervnc-standalone-server novnc websockify sudo xterm init systemd snapd vim net-tools curl wget git tzdata
-RUN apt update -y && apt install -y dbus-x11 x11-utils x11-xserver-utils x11-apps
-RUN apt install software-properties-common -y
-RUN add-apt-repository ppa:mozillateam/ppa -y
-RUN echo 'Package: *' >> /etc/apt/preferences.d/mozilla-firefox
-RUN echo 'Pin: release o=LP-PPA-mozillateam' >> /etc/apt/preferences.d/mozilla-firefox
-RUN echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mozilla-firefox
-RUN echo 'Unattended-Upgrade::Allowed-Origins:: "LP-PPA-mozillateam:jammy";' | tee /etc/apt/apt.conf.d/51unattended-upgrades-firefox
-RUN apt update -y && apt install -y firefox
-RUN apt update -y && apt install -y xubuntu-icon-theme
-RUN touch /root/.Xauthority
-EXPOSE 5901
-EXPOSE 6080
-CMD bash -c "vncserver -localhost no -SecurityTypes None -geometry 1024x768 --I-KNOW-THIS-IS-INSECURE && openssl req -new -subj "/C=JP" -x509 -days 365 -nodes -out self.pem -keyout self.pem && websockify -D --web=/usr/share/novnc/ --cert=self.pem 6080 localhost:5901 && tail -f /dev/null"
+
+# Update system and install the official Kali Xfce Desktop environment, 
+# VNC server, noVNC web interface, sudo utilities, and system prerequisites
+RUN apt-get update && apt-get install -y \
+    kali-desktop-xfce \
+    tigervnc-standalone-server \
+    novnc \
+    websockify \
+    wget \
+    curl \
+    dbus-x11 \
+    gnupg \
+    sudo \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install official Google Chrome stable version
+RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get update \
+    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
+    && rm google-chrome-stable_current_amd64.deb \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create the user 'hux', set up their home directory, and grant full admin (sudo) rights without password prompts
+RUN useradd -m -s /bin/bash hux \
+    && usermod -aG sudo hux \
+    && echo "hux ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Switch from root execution context over to our new admin user context
+USER hux
+ENV USER=hux
+ENV HOME=/home/hux
+ENV DISPLAY=:1
+ENV VNC_RESOLUTION=1280x720
+
+# Create required directories for VNC inside hux's home and configure the Xfce startup session
+RUN mkdir -p /home/hux/.vnc \
+    && echo "#!/bin/sh\n\
+unset SESSION_MANAGER\n\
+unset DBUS_SESSION_BUS_ADDRESS\n\
+startxfce4 &" > /home/hux/.vnc/xstartup \
+    && chmod +x /home/hux/.vnc/xstartup
+
+# Set a default VNC password for the 'hux' user (Change 'kali2026' to your own secure pass phrase)
+RUN echo "kali2026" | vncpasswd -f > /home/hux/.vnc/passwd \
+    && chmod 600 /home/hux/.vnc/passwd
+
+
+
+# Start script to initiate VNC server under user 'hux' and proxy it over noVNC
+CMD ["sh", "-c", "vncserver :1 -geometry $VNC_RESOLUTION -depth 24 && websockify --web /usr/share/novnc/ 8080 localhost:5901"]
