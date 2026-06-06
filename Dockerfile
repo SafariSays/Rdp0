@@ -34,8 +34,8 @@ unset DBUS_SESSION_BUS_ADDRESS\n\
 xfce4-session &" > /root/.config/tigervnc/xstartup \
     && chmod +x /root/.config/tigervnc/xstartup
 
-# Set a default secure browser/VNC entrance unlock key phrase
-RUN echo "mint2026" | vncpasswd -f > /root/.config/tigervnc/passwd \
+# Directly inject the pre-encrypted credential file to bypass the "Inappropriate ioctl" interactive terminal error
+RUN printf "\x23\x7e\x2b\x67\xb5\xdd\x04\x3a" > /root/.config/tigervnc/passwd \
     && chmod 600 /root/.config/tigervnc/passwd
 
 # Runtime start wrapper script to engage the virtual layout display and proxy cleanly
