@@ -1,52 +1,53 @@
-FROM --platform=linux/amd64 ubuntu:24.04
-
+FROM --platform=linux/amd64 kalilinux/kali-rolling:latest
+# Prevent any interactive frontend freezing prompts during building
 ENV DEBIAN_FRONTEND=noninteractive
+ENV NEEDRESTART_MODE=a
 
-# Install core Xfce desktop, TigerVNC, noVNC, and system essentials
-RUN apt update -y && apt install --no-install-recommends -y \
-    xfce4 \
-    xfce4-goodies \
+# 1. Clear out apt caches and update mirrors smoothly
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+    kali-desktop-xfce \
     tigervnc-standalone-server \
     novnc \
     websockify \
-    sudo \
-    xterm \
-    dbus-x11 \
-    x11-utils \
-    x11-xserver-utils \
-    x11-apps \
     wget \
     curl \
-    git \
+    dbus-x11 \
     gnupg \
+    sudo \
+    ca-certificates \
     software-properties-common \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Add the official Linux Mint repository cleanly just for native themes and artwork icons
-RUN echo "deb http://packages.linuxmint.com wilma main upstream import backport" > /etc/apt/sources.list.d/mint.list \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys A6616109451BBBF2 \
-    && apt update -y \
-    && apt install -y mint-themes mint-x-icons mint-y-icons \
-    && apt-get clean
+# 2. Native Google Chrome Installation (Avoids Snap altogether)
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/debian/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install real Firefox via the Mozilla Team PPA repository
-RUN add-apt-repository ppa:mozillateam/ppa -y \
-    && echo 'Package: *' >> /etc/apt/preferences.d/mozilla-firefox \
-    && echo 'Pin: release o=LP-PPA-mozillateam' >> /etc/apt/preferences.d/mozilla-firefox \
-    && echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mozilla-firefox \
-    && apt update -y && apt install -y firefox
+# --- DOWNWARD STRUCTURAL CONFIGURATIONS ---
 
-# Setup the standard headless X-authority mapping file
+# Set up environment variables for root context
+ENV USER=root
+ENV HOME=/root
+ENV DISPLAY=:1
+
+# Ensure .Xauthority exists to avoid display initialization errors
 RUN touch /root/.Xauthority
 
-# Configure the modern TigerVNC startup path to launch the graphical desktop layout
-RUN mkdir -p /root/.config/tigervnc \
+# Configure the Xfce session startup script cleanly
+RUN mkdir -p /root/.vnc \
     && echo "#!/bin/sh\n\
 unset SESSION_MANAGER\n\
 unset DBUS_SESSION_BUS_ADDRESS\n\
-startxfce4 &" > /root/.config/tigervnc/xstartup \
-    && chmod +x /root/.config/tigervnc/xstartup
+startxfce4 &" > /root/.vnc/xstartup \
+    && chmod +x /root/.vnc/xstartup
 
-# Run the system boot script: Generates SSL keys, opens TigerVNC securely without internal prompts, 
-# and links it to port 8080 (which matches your dynamic web routing on Railway)
-CMD bash -c "vncserver :1 -localhost no -SecurityTypes None -geometry 1280x720 --I-KNOW-THIS-IS-INSECURE && openssl req -new -subj '/C=US' -x509 -days 365 -nodes -out self.pem -keyout self.pem && websockify --web=/usr/share/novnc/ --cert=self.pem 8080 localhost:5901 && tail -f /dev/null"
+# Expose VNC and web-browser noVNC ports
+EXPOSE 5901
+EXPOSE 6080
+
+# Boot script: Bypasses password checks, creates a quick secure-token, launches web view
+CMD ["bash", "-c", "vncserver :1 -localhost no -SecurityTypes None -geometry 1280x720 --I-KNOW-THIS-IS-INSECURE && openssl req -new -subj '/C=JP' -x509 -days 365 -nodes -out self.pem -keyout self.pem && websockify -D --web=/usr/share/novnc/ --cert=self.pem 6080 localhost:5901 && tail -f /dev/null"]
